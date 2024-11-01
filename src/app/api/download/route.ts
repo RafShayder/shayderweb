@@ -1,4 +1,3 @@
-
 import { NextResponse } from 'next/server';
 import path from 'path';
 import { spawn } from 'child_process';
@@ -19,7 +18,8 @@ export async function GET(request: Request) {
             '--dump-json' // Este flag nos permite obtener la información en formato JSON
         ];
 
-        const youtubedlPath = path.resolve('node_modules/youtube-dl-exec/bin/yt-dlp.exe');
+        // Nueva ruta al ejecutable en la carpeta `bin`
+        const youtubedlPath = path.resolve('bin/yt-dlp.exe');
         const infoProcess = spawn(youtubedlPath, infoArgs);
 
         let metadata: string = '';
@@ -37,14 +37,14 @@ export async function GET(request: Request) {
 
         // Parsear los metadatos obtenidos
         const videoInfo = JSON.parse(metadata);
-        const title = videoInfo.title || 'video'; // Usar un título por defecto si no está disponible
+        const title = videoInfo.title || 'video';
         const fileName = `${title}.${format === 'bestaudio' ? 'mp3' : 'mp4'}`;
-        //console.log(videoInfo)
+
         // Opciones para ejecutar yt-dlp y descargar el video
         const downloadArgs = [
             url,
             '-f', format,
-            '-o', '-', // Indica que la salida será en formato stream
+            '-o', '-',
             '--no-check-certificate',
             '--prefer-free-formats'
         ];
@@ -63,7 +63,7 @@ export async function GET(request: Request) {
             }), {
                 headers: {
                     'Content-Type': format === 'bestaudio' ? 'audio/mpeg' : 'video/mp4',
-                    'Content-Disposition': `attachment; filename="${fileName}"`, // Nombre del archivo basado en los metadatos
+                    'Content-Disposition': `attachment; filename="${fileName}"`,
                 },
             }
         );
