@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import path from 'path';
 import { spawn } from 'child_process';
+import fs from 'fs';
+import https from 'https';
+import os from 'os';
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -11,36 +14,51 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'URL inválida' }, { status: 400 });
     }
 
-    try {
-        // Primero obtenemos los metadatos del video
-        const infoArgs = [
-            url,
-            '--dump-json' // Este flag nos permite obtener la información en formato JSON
-        ];
+    // Determinar la ruta de yt-dlp según el sistema operativo
+    const isWindows = os.platform() === 'win32';
+    const youtubedlPath = path.resolve(isWindows ? 'node_modules/youtube-dl-exec/bin/yt-dlp.exe' : '/tmp/yt-dlp');
+    
+    // Verificar si yt-dlp ya está en el sistema (solo para Linux)
+    if (!isWindows && !fs.existsSync(youtubedlPath)) {
+        console.log("Descargando yt-dlp...");
 
-        // Nueva ruta al ejecutable en la carpeta `bin`
-        const youtubedlPath = path.resolve('bin/yt-dlp.exe');
+        // Descargar yt-dlp en la carpeta temporal
+        const file = fs.createWriteStream(youtubedlPath);
+        await new Promise((resolve, reject) => {
+            https.get('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp', (response) => {
+                response.pipe(file);
+                file.on('finish', () => {
+                    file.close();
+                    fs.chmodSync(youtubedlPath, '755'); // Hacer el archivo ejecutable
+                    resolve(true);
+                });
+            }).on('error', (err) => {
+                fs.unlinkSync(youtubedlPath);
+                reject(err);
+            });
+        });
+    }
+
+    try {
+        // Obtener metadatos del video
+        const infoArgs = [url, '--dump-json'];
         const infoProcess = spawn(youtubedlPath, infoArgs);
 
-        let metadata: string = '';
-
-        // Recopilar los metadatos del stdout
+        let metadata = '';
         infoProcess.stdout.on('data', (chunk) => {
             metadata += chunk.toString();
         });
 
-        // Esperar a que el proceso termine
         await new Promise((resolve, reject) => {
             infoProcess.on('close', resolve);
             infoProcess.on('error', reject);
         });
 
-        // Parsear los metadatos obtenidos
         const videoInfo = JSON.parse(metadata);
         const title = videoInfo.title || 'video';
         const fileName = `${title}.${format === 'bestaudio' ? 'mp3' : 'mp4'}`;
 
-        // Opciones para ejecutar yt-dlp y descargar el video
+        // Descargar video
         const downloadArgs = [
             url,
             '-f', format,
@@ -52,7 +70,6 @@ export async function GET(request: Request) {
         const downloadProcess = spawn(youtubedlPath, downloadArgs);
         const stream = downloadProcess.stdout;
 
-        // Crear un ReadableStream para enviar los datos al frontend
         return new NextResponse(
             new ReadableStream({
                 start(controller) {
